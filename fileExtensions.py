@@ -319,8 +319,3 @@ web_extensions = [
     '.wasm',
     '.map',  # Source map
 ]
-
-print(hash('Hello'))
-print(hash('Hello'))
-print(hash('Hello'))
-print(hash('Hello'))
