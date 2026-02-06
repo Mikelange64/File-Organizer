@@ -5,7 +5,7 @@ import re
 import os
 import hashlib
 import json
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 import time
 import logging
 from collections import defaultdict
@@ -21,6 +21,10 @@ class FileOrganizer:
 
         if not directory.exists():
             print('This directory does not exist.')
+            return
+
+        if not directory.is_dir():
+            print(f'{directory} is a file not a directory')
             return
 
         (directory/'Documents').mkdir(exist_ok=True, parents=True)
@@ -106,6 +110,10 @@ class FileOrganizer:
             print('This directory does not exist.')
             return
 
+        if not directory.is_dir():
+            print(f'{directory} is a file not a directory')
+            return
+
         files = defaultdict(list)
 
         for item in directory.rglob('*'):
@@ -153,11 +161,11 @@ class FileOrganizer:
                     for f in duplicates:
                         if Path(f).name == file_to_keep or Path(f).stem == file_to_keep:
                             continue
-                        freed_space += Path(f).stat().st_size
-                        total_deleted += 1
 
                         try:
                             Path(f).unlink()
+                            freed_space += Path(f).stat().st_size
+                            total_deleted += 1
                         except OSError as e:
                             print(e)
                             print(f'{f} could not be deleted.')
@@ -171,6 +179,10 @@ class FileOrganizer:
 
         if not directory.exists():
             print('This directory does not exist.')
+            return
+
+        if not directory.is_dir():
+            print(f'{directory} is a file not a directory')
             return
 
         pattern = getattr(args, 'pattern', None)
@@ -197,7 +209,7 @@ class FileOrganizer:
         all_files = [item for item in directory.iterdir() if item.is_file()]
 
         if pattern:
-            found_placeholders = set(re.findall(r'\{[^}]+\}', pattern))
+            found_placeholders = set(re.findall(r'(\{[^}]+\})', pattern))
             invalid_placeholders = found_placeholders - valid_placeholders
 
             if invalid_placeholders:
@@ -284,6 +296,211 @@ class FileOrganizer:
                 file.rename(new_path)
 
     @staticmethod
+    def find_large_files(args):
+        directory = Path(args.directory)
+
+        if not directory.exists():
+            print('This directory does not exist.')
+            return
+
+        if not directory.is_dir():
+            print(f'{directory} is a file not a directory')
+            return
+
+        # min_size comes as a string of size + unit (e.g. 100 MB), we have to convert it to bytes directly
+        user_size = args.min_size.strip()
+        num_part = ''
+        unit_part = ''
+
+        for char in user_size:
+            if char.isdigit() or char == '.':
+                num_part += char
+            else:
+                unit_part = user_size[len(num_part):].strip()
+                break
+
+        if not num_part or not unit_part:
+            print("Invalid format. Use format like: 100MB, 50 KB, 1.5GB")
+            return
+
+        try:
+            min_size = float(num_part)
+        except ValueError:
+            print('Invalid number in size')
+            return
+
+        unit = unit_part.upper()
+
+        conversion = {
+            'B' : 1,
+            'KB' : 1024,
+            'MB' : 1024**2,
+            'GB' : 1024**3,
+            'TB' : 1024**4
+        }
+
+        if unit not in conversion:
+            print(f'{unit} is not a valid unit. Please select a valid unit: B, KB, MB, GB, & TB')
+            return
+
+        min_size = min_size * conversion[unit]
+
+        if args.recursive:
+            large_files = [(item, item.stat().st_size) for item in directory.rglob('*') if item.is_file() and item.stat().st_size >= min_size]
+        else:
+            large_files = [(item, item.stat().st_size) for item in directory.iterdir() if item.is_file() and item.stat().st_size >= min_size]
+
+        sorted_files = sorted(large_files, key=lambda file : file[1])
+        total_size = sum(file[1] for file in sorted_files)
+
+        print(f'Files above {num_part} {unit}')
+
+        for file in sorted_files:
+            f_size, f_unit = FileOrganizer._find_unit(file[1])
+            print(f'{file[0]}: {f_size} {f_unit}')
+
+        t_size, t_unit = FileOrganizer._find_unit(total_size)
+        print(f'Total size: {t_size} {t_unit}.')
+
+    @staticmethod
+    def clean_up(args):
+        directory = Path(args.directory)
+
+        if not directory.exists():
+            print('This directory does not exist.')
+            return
+
+        if not directory.is_dir():
+            print(f'{directory} is a file not a directory')
+            return
+
+        older_than = getattr(args, 'older_than', None)
+        empty = getattr(args, 'empty_folder', None)
+
+        if not older_than and not empty:
+            print('You must select an attribute; --older-than (number of days) or --empty-folder.')
+            return
+
+        if older_than and empty:
+            print('You can only select one attribute at a time.')
+            return
+
+        files_to_check = directory.rglob('*') if args.recursive else directory.iterdir()
+
+        if older_than:
+            today = dt.today()
+            cutoff = today - timedelta(days=older_than)
+            old_files = []
+
+            for item in files_to_check:
+                if not item.is_file():
+                    continue
+
+                last_modified = dt.fromtimestamp(item.stat().st_mtime)
+
+                if last_modified < cutoff:
+                    old_files.append((item, item.stat().st_size))
+
+            if not old_files:
+                print(f'There are no files older than {older_than} days.')
+                return
+
+            total_size = sum(file[1] for file in old_files)
+            size, unit = FileOrganizer._find_unit(total_size)
+
+            print(f'You have {size} {unit} of old files.')
+            old_paths = [p[0] for p in old_files]
+
+            FileOrganizer._delete_path(old_paths, 'files')
+
+        if empty:
+            empty_folders = []
+
+            for item in files_to_check:
+
+                if not item.is_dir():
+                    continue
+
+                if not any(item.iterdir()):
+                    empty_folders.append(item)
+
+            if not empty_folders:
+                print('No folders are empty in this directory')
+                return
+
+            print(f'{len(empty_folders)} empty folders found')
+
+            FileOrganizer._delete_path(empty_folders, 'folders')
+
+    @staticmethod
+    def _delete_path(paths:list, p_type:str):
+
+        delete_option = input("Would you like to:\n"
+                           f"A. Delete all old {p_type}\n"
+                           f"B. Delete selected {p_type} only\n"
+                           "C. Continue without deleting\n"
+                           "Select an option (A, B or C): ").upper()
+
+        while delete_option not in ['A', 'B', 'C']:
+            delete_option =  input("Invalid choice. Please select a valid option (A, B, or C):\n"
+                           f"A. Delete all old {p_type}\n"
+                           f"B. Delete selected {p_type} only\n"
+                           "C. Continue without deleting").upper()
+
+        if delete_option == 'A':
+            for p in paths:
+                if p.is_file():
+                    try:
+                        p.unlink()
+                    except OSError:
+                        print(f'{p} could not be deleted.')
+
+                elif p.is_dir():
+                    try:
+                        p.rmdir()
+                    except OSError:
+                        print(f'{p} could not be deleted.')
+
+            print(f'{len(paths)} {p_type} deleted!')
+
+        elif delete_option == 'B':
+            paths_deleted = 0
+            freed_space = 0
+
+            for p in paths:
+                delete_p = input(f'Would you like to delete {p}?[y/N]: ')
+
+                if delete_p != 'y':
+                    continue
+                else:
+                    if p.is_file():
+                        try:
+                            freed_space += p.stat().st_size
+                            p.unlink()
+                            paths_deleted += 1
+                        except OSError:
+                            print(f'{p} could not be deleted.')
+
+                    elif p.is_dir():
+                        try:
+                            p.rmdir()
+                            paths_deleted += 1
+                        except OSError:
+                            print(f'{p} could not be deleted.')
+
+            if p_type == 'files':
+                size, unit = FileOrganizer._find_unit(freed_space)
+                print(f'{paths_deleted} files deleted ({size} {unit})')
+
+            elif p_type == 'folders':
+                print(f'{paths_deleted} folders deleted.')
+
+        else:
+            print(f'{p_type.capitalize()} found but not deleted:')
+            for p in paths:
+                print(p)
+
+    @staticmethod
     def _get_file_hash(filepath):
         hasher = hashlib.md5()
 
@@ -297,7 +514,7 @@ class FileOrganizer:
         return hasher.hexdigest()
 
     @staticmethod
-    def _find_unit(size):
+    def _find_unit(size:float) -> tuple:
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if size < 1024:
                 return round(size, 1), unit
@@ -329,19 +546,22 @@ def main():
     rename_subparser.add_argument('--add-prefix', type=str,  help='prefix to add to the file')
     rename_subparser.add_argument('--add-suffix', type=str,  help='suffix to add to the file')
     rename_subparser.add_argument('--add-date', type=str,  help='add a date (YYYY-MM-DD)')
+    rename_subparser.set_defaults(func=organizer.bulk_rename)
 
    # ==================== FIND LARGE ====================
     find_large_subparser = subparsers.add_parser('find-large', help='organize directory')
     find_large_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
-    find_large_subparser.add_argument('--min-size', type=str, help='minimum size of files to find')
-    find_large_subparser.set_defaults(func='')
+    find_large_subparser.add_argument('--min-size', type=str, required=True, help='minimum size of files to find (e.g. 100 MB)')
+    find_large_subparser.add_argument('--recursive', action='store_true', help='look through the entire directory tree')
+    find_large_subparser.set_defaults(func=organizer.find_large_files)
 
    # ===================== CLEANUP ======================
     cleanup_subparser = subparsers.add_parser('clean-up', help='organize directory')
     cleanup_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
-    cleanup_subparser.add_argument('--older-than', type=int, help='Age of files to find')
-    cleanup_subparser.add_argument('--empty-folder', type=str,  help='Finds all empty folders')
-    cleanup_subparser.set_defaults(func='')
+    cleanup_subparser.add_argument('--older-than', type=int, help='Files older the x days')
+    cleanup_subparser.add_argument('--empty-folder', action='store_true',  help='Finds all empty folders')
+    cleanup_subparser.add_argument('--recursive', action='store_true',  help='Finds all empty folders')
+    cleanup_subparser.set_defaults(func=organizer.clean_up)
 
     # ===================== CLEANUP ======================
     rename_subparser = subparsers.add_parser('clean-up', help='organize directory')
