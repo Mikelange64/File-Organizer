@@ -1,16 +1,16 @@
 from argparse import ArgumentParser
 from pathlib import Path
 import shutil
+import re
 import os
 import hashlib
 import json
-import datetime
+from datetime import datetime as dt
 import time
 import logging
 from collections import defaultdict
 from time import sleep
-
-from fileExtensions import image_extensions, video_extensions, document_extensions, audio_extensions, archive_extensions
+import fileExtensions
 
 
 class FileOrganizer:
@@ -20,7 +20,7 @@ class FileOrganizer:
         directory = Path(args.directory)
 
         if not directory.exists():
-            print('This directory does not exist')
+            print('This directory does not exist.')
             return
 
         (directory/'Documents').mkdir(exist_ok=True, parents=True)
@@ -29,12 +29,6 @@ class FileOrganizer:
         (directory/'Audios').mkdir(exist_ok=True, parents=True)
         (directory/'Archives').mkdir(exist_ok=True, parents=True)
         (directory/'Others').mkdir(exist_ok=True, parents=True)
-
-        documents = document_extensions
-        images = image_extensions
-        videos = video_extensions
-        audio = audio_extensions
-        archives = archive_extensions
 
         doc_count = 0
         img_count = 0
@@ -52,27 +46,28 @@ class FileOrganizer:
 
             suffix_lower = item.suffix.lower()
 
-            if suffix_lower in documents:
+
+            if suffix_lower in fileExtensions.document_extensions:
                 print(f"Organizing {item.name}")
                 shutil.move(item, Path(directory/'Documents'/item))
                 doc_count += 1
 
-            elif suffix_lower in images:
+            elif suffix_lower in fileExtensions.image_extensions:
                 print(f"Organizing {item.name}")
                 shutil.move(item, Path(directory/'Images'/item))
                 img_count += 1
 
-            elif suffix_lower() in videos:
+            elif suffix_lower() in fileExtensions.video_extensions:
                 print(f"Organizing {item.name}")
                 shutil.move(item, Path(directory / 'Videos'/item))
                 vid_count += 1
 
-            elif suffix_lower() in audio:
+            elif suffix_lower() in fileExtensions.audio_extensions:
                 print(f"Organizing {item.name}")
                 shutil.move(item, Path(directory/'Audios'/item))
                 aud_count += 1
 
-            elif suffix_lower() in archives:
+            elif suffix_lower() in fileExtensions.archive_extensions:
                 print(f"Organizing {item.name}")
                 shutil.move(item, Path(directory/'Archives'/item))
                 arc_count += 1
@@ -106,6 +101,10 @@ class FileOrganizer:
     @staticmethod
     def manage_duplicates(args):
         directory = Path(args.directory)
+
+        if not directory.exists():
+            print('This directory does not exist.')
+            return
 
         files = defaultdict(list)
 
@@ -167,6 +166,124 @@ class FileOrganizer:
         print(f" You've deleted {total_deleted} files, and saved {size} {unit}")
 
     @staticmethod
+    def bulk_rename(args):
+        directory = Path(args.directory)
+
+        if not directory.exists():
+            print('This directory does not exist.')
+            return
+
+        pattern = getattr(args, 'pattern', None)
+        suffix = getattr(args, 'add_suffix', None)
+        prefix = getattr(args, 'add_prefix', None)
+        date = getattr(args, 'add_date', None)
+
+        if date:
+            try:
+                dt.strptime(date, '%Y-%m-%d')
+            except ValueError:
+                print('Dates should be entered in the following format (YYYY-MM-DD)')
+                return
+
+        if pattern and any((suffix, prefix, date)):
+            print(
+                "Invalid options: patterns must be used alone. "
+                "Choose either a pattern, or one or more of the other attributes."
+            )
+            return
+
+        valid_placeholders = {'{count}', '{name}', '{last_modified}', '{doc_type}'}
+
+        all_files = [item for item in directory.iterdir() if item.is_file()]
+
+        if pattern:
+            found_placeholders = set(re.findall(r'\{[^}]+\}', pattern))
+            invalid_placeholders = found_placeholders - valid_placeholders
+
+            if invalid_placeholders:
+                print(f'Invalid placeholders: {invalid_placeholders}')
+                print(f'Please select a valid placeholder in your pattern: {valid_placeholders}')
+                return
+
+            count = 0
+
+            for file in all_files:
+                ext = file.suffix
+                new_name = pattern
+
+                if '{name}' in found_placeholders:
+                    new_name = new_name.replace('{name}', file.stem)
+
+                if '{count}' in found_placeholders:
+                    new_name = new_name.replace('{count}', str(count))
+
+                if '{doc_type}' in found_placeholders:
+                    suffix_lower = file.suffix.lower()
+                    if suffix_lower in fileExtensions.document_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Document')
+                    elif suffix_lower in fileExtensions.image_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Image')
+                    elif suffix_lower in fileExtensions.video_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Video')
+                    elif suffix_lower in fileExtensions.audio_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Audio')
+                    elif suffix_lower in fileExtensions.archive_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Archive')
+                    elif suffix_lower in fileExtensions.code_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Code')
+                    elif suffix_lower in fileExtensions.web_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Web')
+                    elif suffix_lower in fileExtensions.font_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Font')
+                    elif suffix_lower in fileExtensions.executable_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Binary')
+                    elif suffix_lower in fileExtensions.database_extensions:
+                        new_name = new_name.replace('{doc_type}', 'Database')
+                    else:
+                        new_name = new_name.replace('{doc_type}', 'Other')
+
+                if '{last_modified}' in found_placeholders:
+                    last_modified = dt.fromtimestamp(file.stat().st_mtime)
+                    readable_date = last_modified.strftime('%Y-%m-%d')
+                    new_name = new_name.replace('{last_modified}', readable_date)
+
+                if Path(new_name).suffix:
+                    new_path = file.parent/f'{new_name}'
+                else:
+                    new_path = file.parent / f'{new_name}{ext}'
+
+                if new_path.exists():
+                    print(f'{file.stem} cannot be renamed, {new_path}, because this file path already exists')
+                    continue
+
+                file.rename(new_path)
+                count += 1
+
+        if any((suffix, prefix, date)):
+
+            for file in all_files:
+                ext = file.suffix
+                new_name = file.stem
+
+                if prefix:
+                    new_name = f'{prefix}_{file.stem}'
+                if date:
+                    new_name = f'{new_name}_{date}'
+                if suffix:
+                    new_name = f'{new_name}_{suffix}'
+
+                if Path(new_name).suffix:
+                    new_path = file.parent/f'{new_name}'
+                else:
+                    new_path = file.parent / f'{new_name}{ext}'
+
+                if new_path.exists():
+                    print(f'{file.stem} cannot be renamed, {new_path}, because this file path already exists')
+                    continue
+
+                file.rename(new_path)
+
+    @staticmethod
     def _get_file_hash(filepath):
         hasher = hashlib.md5()
 
@@ -203,24 +320,15 @@ def main():
     duplicate_subparser = subparsers.add_parser('duplicate', help='organize directory')
     duplicate_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
     duplicate_subparser.add_argument('--scan', action='store_true', help='scan directory for duplicates')
-    duplicate_subparser.add_argument('--remove', action='store_true',  help='remove duplicates from directory')
     duplicate_subparser.set_defaults(func=organizer.manage_duplicates)
 
     # ====================== RENAME ======================
     rename_subparser = subparsers.add_parser('rename', help='organize directory')
     rename_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
-    rename_subparser.add_argument('--pattern', action='store_true', help='scan directory for duplicates')
-    rename_subparser.add_argument('--add-prefix', action='store_true',  help='remove duplicates from directory')
-    rename_subparser.add_argument('--add-date', action='store_true',  help='remove duplicates from directory')
-    rename_subparser.set_defaults(func='')
-
-   # ==================== DUPLICATES ====================
-    duplicate_subparser = subparsers.add_parser('rename', help='organize directory')
-    duplicate_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
-    duplicate_subparser.add_argument('--pattern', action='store_true', help='scan directory')
-    duplicate_subparser.add_argument('--add-prefix', action='store_true',  help='remove duplicates from directory')
-    duplicate_subparser.add_argument('--add-date', action='store_true',  help='remove duplicates from directory')
-    duplicate_subparser.set_defaults(func='')
+    rename_subparser.add_argument('--pattern', type=str, help='Pattern with placeholders: {name}, {count}, {doc_type}, {last_modified}')
+    rename_subparser.add_argument('--add-prefix', type=str,  help='prefix to add to the file')
+    rename_subparser.add_argument('--add-suffix', type=str,  help='suffix to add to the file')
+    rename_subparser.add_argument('--add-date', type=str,  help='add a date (YYYY-MM-DD)')
 
    # ==================== FIND LARGE ====================
     find_large_subparser = subparsers.add_parser('find-large', help='organize directory')
