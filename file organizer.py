@@ -11,7 +11,7 @@ import fileExtensions
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(funcName)s - %(message)s'
 )
 
@@ -20,9 +20,8 @@ class FileOrganizer:
 
     @staticmethod
     def organize_dir(args):
-        logging.info(f'Starting organize_dir with directory: {args.directory}')
+        logging.info(f'Starting file organization: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
-        logging.debug(f'Resolved directory path: {directory}')
 
         if not directory.exists():
             logging.error(f'Directory does not exist: {directory}')
@@ -34,14 +33,12 @@ class FileOrganizer:
             print(f'{directory} is a file not a directory')
             return
 
-        logging.debug('Creating category folders')
         (directory/'Documents').mkdir(exist_ok=True, parents=True)
         (directory/'Images').mkdir(exist_ok=True, parents=True)
         (directory/'Videos').mkdir(exist_ok=True, parents=True)
         (directory/'Audios').mkdir(exist_ok=True, parents=True)
         (directory/'Archives').mkdir(exist_ok=True, parents=True)
         (directory/'Others').mkdir(exist_ok=True, parents=True)
-        logging.debug('Category folders created successfully')
 
         doc_count = 0
         img_count = 0
@@ -51,7 +48,6 @@ class FileOrganizer:
         other_count = 0
 
         start_time = time.perf_counter()
-        logging.info('Starting file organization process')
 
         for item in list(directory.iterdir()):
 
@@ -92,7 +88,6 @@ class FileOrganizer:
 
         created_folders = {'Documents', 'Images', 'Videos', 'Audios', 'Archives', 'Others'}
 
-        logging.debug('Removing empty non-category folders')
         for item in directory.iterdir():
             if item.is_dir() and item.name not in created_folders:
                 try:
@@ -118,9 +113,8 @@ class FileOrganizer:
 
     @staticmethod
     def manage_duplicates(args):
-        logging.info(f'Starting manage_duplicates with directory: {args.directory}')
+        logging.info(f'Starting duplicate detection: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
-        logging.debug(f'Resolved directory path: {directory}')
 
         if not directory.exists():
             logging.error(f'Directory does not exist: {directory}')
@@ -139,8 +133,6 @@ class FileOrganizer:
             return
 
         min_size = result[0]
-
-        logging.debug('Scanning directory for files to generate hashes')
         files = defaultdict(list)
 
         EXCLUDED_DIRS = {
@@ -300,9 +292,8 @@ class FileOrganizer:
 
     @staticmethod
     def bulk_rename(args):
-        logging.info(f'Starting bulk_rename with directory: {args.directory}')
+        logging.info(f'Starting bulk rename: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
-        logging.debug(f'Resolved directory path: {directory}')
 
         if not directory.exists():
             logging.error(f'Directory does not exist: {directory}')
@@ -318,12 +309,10 @@ class FileOrganizer:
         suffix = getattr(args, 'add_suffix', None)
         prefix = getattr(args, 'add_prefix', None)
         date = getattr(args, 'add_date', None)
-        logging.debug(f'Rename options - Pattern: {pattern}, Suffix: {suffix}, Prefix: {prefix}, Date: {date}')
 
         if date:
             try:
                 dt.strptime(date, '%Y-%m-%d')
-                logging.debug(f'Date validation successful: {date}')
             except ValueError:
                 logging.error(f'Invalid date format: {date}')
                 print('Dates should be entered in the following format (YYYY-MM-DD)')
@@ -340,10 +329,9 @@ class FileOrganizer:
         valid_placeholders = {'{count}', '{name}', '{last_modified}', '{doc_type}'}
 
         all_files = [item for item in directory.iterdir() if item.is_file()]
-        logging.debug(f'Found {len(all_files)} files to process')
 
         if pattern:
-            logging.info(f'Processing files with pattern: {pattern}')
+            logging.info(f'Applying pattern: {pattern}')
             found_placeholders = set(re.findall(r'(\{[^}]+\})', pattern))
             invalid_placeholders = found_placeholders - valid_placeholders
 
@@ -353,7 +341,7 @@ class FileOrganizer:
                 print(f'Please select a valid placeholder in your pattern: {valid_placeholders}')
                 return
 
-            count = 0
+            count = 1
 
             for file in all_files:
                 ext = file.suffix
@@ -408,10 +396,9 @@ class FileOrganizer:
                 file.rename(new_path)
                 count += 1
 
-            logging.info(f'Pattern-based rename complete: renamed {count} files')
+            logging.info(f'Completed pattern rename: {count} files')
 
         if any((suffix, prefix, date)):
-            logging.info(f'Processing files with prefix/suffix/date options')
             renamed_count = 0
 
             for file in all_files:
@@ -438,13 +425,12 @@ class FileOrganizer:
                 file.rename(new_path)
                 renamed_count += 1
 
-            logging.info(f'Prefix/suffix/date rename complete: renamed {renamed_count} files')
+            logging.info(f'Completed prefix/suffix/date rename: {renamed_count} files')
 
     @staticmethod
     def find_large_files(args):
-        logging.info(f'Starting find_large_files with directory: {args.directory}')
+        logging.info(f'Searching for large files: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
-        logging.debug(f'Resolved directory path: {directory}')
 
         if not directory.exists():
             logging.error(f'Directory does not exist: {directory}')
@@ -458,7 +444,6 @@ class FileOrganizer:
 
         # min_size comes as a string of size + unit (e.g. 100 MB), we have to convert it to bytes directly
         user_size = args.min_size.strip()
-        logging.debug(f'User input size: {user_size}')
 
         result = FileOrganizer._convert_to_bytes(user_size)
 
@@ -468,21 +453,19 @@ class FileOrganizer:
         min_size, num_part, unit = result
 
         if args.recursive:
-            logging.debug('Searching recursively through directory tree')
             large_files = [(item, item.stat().st_size) for item in directory.rglob('*') if item.is_file() and item.stat().st_size >= min_size]
         else:
-            logging.debug('Searching only in top-level directory')
             large_files = [(item, item.stat().st_size) for item in directory.iterdir() if item.is_file() and item.stat().st_size >= min_size]
 
         sorted_files = sorted(large_files, key=lambda file : file[1])
         total_size = sum(file[1] for file in sorted_files)
 
         logging.info(f'Found {len(sorted_files)} files larger than {num_part} {unit}')
-        print(f'Files above {num_part} {unit}')
+        print(f'{len(sorted_files)} files larger than {num_part} {unit}')
 
         for file in sorted_files:
             f_size, f_unit = FileOrganizer._find_unit(file[1])
-            print(f'{file[0]}: {f_size} {f_unit}')
+            print(f'\t{file[0]}: {f_size} {f_unit}')
 
         t_size, t_unit = FileOrganizer._find_unit(total_size)
         logging.info(f'Total size of large files: {t_size} {t_unit}')
@@ -490,9 +473,8 @@ class FileOrganizer:
 
     @staticmethod
     def clean_up(args):
-        logging.info(f'Starting clean_up with directory: {args.directory}')
+        logging.info(f'Starting cleanup: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
-        logging.debug(f'Resolved directory path: {directory}')
 
         if not directory.exists():
             logging.error(f'Directory does not exist: {directory}')
@@ -506,7 +488,6 @@ class FileOrganizer:
 
         older_than = getattr(args, 'older_than', None)
         empty = getattr(args, 'empty_folder', None)
-        logging.debug(f'Clean-up options - Older than: {older_than} days, Empty folders: {empty}')
 
         if not older_than and not empty:
             logging.error('No clean-up attribute specified')
@@ -573,9 +554,8 @@ class FileOrganizer:
 
     @staticmethod
     def walk_tree(args):
-        logging.info(f'Starting walk_tree with directory: {args.directory}')
+        logging.info(f'Displaying directory tree: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
-        logging.debug(f'Resolved directory path: {directory}')
 
         if not directory.exists():
             logging.error(f'Directory does not exist: {directory}')
@@ -588,7 +568,6 @@ class FileOrganizer:
             return
 
         depth = getattr(args, 'depth', None)
-        logging.debug(f'Tree depth limit: {depth}')
 
         FileOrganizer._tree(directory, depth)
 
@@ -639,7 +618,6 @@ class FileOrganizer:
 
         try:
             min_size = float(num_part)
-            logging.debug(f'Parsed size value: {min_size}')
         except ValueError:
             logging.error(f'Invalid number in size: {num_part}')
             print('Invalid number in size')
@@ -661,14 +639,11 @@ class FileOrganizer:
             return
 
         min_size = min_size * conversion[unit]
-        logging.debug(f'Converted minimum size to bytes: {min_size}')
 
         return min_size, num_part, unit_part
 
     @staticmethod
     def _delete_path(paths:list, p_type:str):
-        logging.info(f'Starting _delete_path for {len(paths)} {p_type}')
-
         delete_option = input("Would you like to:\n"
                            f"A. Delete all old {p_type}\n"
                            f"B. Delete selected {p_type} only\n"
@@ -676,14 +651,12 @@ class FileOrganizer:
                            "Select an option (A, B or C): ").upper()
 
         while delete_option not in ['A', 'B', 'C']:
-            logging.warning(f'Invalid delete option selected: {delete_option}')
             delete_option =  input("Invalid choice. Please select a valid option (A, B, or C):\n"
                            f"A. Delete all old {p_type}\n"
                            f"B. Delete selected {p_type} only\n"
                            "C. Continue without deleting").upper()
 
         if delete_option == 'A':
-            logging.info(f'User selected to delete all {len(paths)} {p_type}')
             for p in paths:
                 if p.is_file():
                     try:
@@ -703,7 +676,6 @@ class FileOrganizer:
             print(f'{len(paths)} {p_type} deleted!')
 
         elif delete_option == 'B':
-            logging.info(f'User selected to delete {p_type} selectively')
             paths_deleted = 0
             freed_space = 0
 
@@ -740,7 +712,6 @@ class FileOrganizer:
                 print(f'{paths_deleted} folders deleted.')
 
         else:
-            logging.info(f'User chose not to delete {p_type}')
             print(f'{p_type.capitalize()} found but not deleted:')
             for p in paths:
                 print(p)
@@ -748,17 +719,12 @@ class FileOrganizer:
     # Implemented by AI, I was not familiar with the tree display algorithm
     @staticmethod
     def _tree(path: Path, depth, prefix=""):
-        logging.debug(f'Traversing tree at {path} with depth {depth}')
-        
         if depth is not None and depth < 0:
-            logging.debug(f'Depth limit reached at {path}')
             return
 
         try:
             children = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name))
-            logging.debug(f'Found {len(children)} items in {path}')
         except PermissionError:
-            logging.warning(f'Permission denied accessing {path}')
             print(prefix + "└── [permission denied]")
             return
 
@@ -774,7 +740,7 @@ class FileOrganizer:
                 FileOrganizer._tree(item, next_depth, new_prefix)
 
 def main():
-    logging.info('File Organizer application started2')
+    logging.info('File Organizer started')
 
     organizer = FileOrganizer()
 
@@ -820,17 +786,14 @@ def main():
     # ====================== TREE =======================
     rename_subparser = subparsers.add_parser('tree', help='organize directory')
     rename_subparser.add_argument('directory', type=str, help='Directory name')
-    rename_subparser.add_argument('--depth', required=True, type=int, help='Depth of the directory tree')
+    rename_subparser.add_argument('--depth', type=int, help='Depth of the directory tree')
     rename_subparser.set_defaults(func=organizer.walk_tree)
 
     args = parser.parse_args()
-    logging.debug(f'Parsed arguments: {args}')
 
     if hasattr(args, 'func'):
-        logging.info(f'Executing command: {args.commands}')
         args.func(args)
     else:
-        logging.info('No command specified, printing help')
         parser.print_help()
 
 if __name__ == '__main__':

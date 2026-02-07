@@ -1,18 +1,18 @@
-1. Organize Files by Type
+1. Organize Files by Type (passed)
 
 # Organize
-python3 'File Organizer.py' organize ~/Downloads (passed)
+python3 'File Organizer.py' organize ~/Downloads
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-2. Find Duplicate Files
+2. Find Duplicate Files (passed)
 
 # Scan for duplicates
-python3 'file organizer.py' duplicate ~/Documents (passed)
+python3 'file organizer.py' duplicate ~/Documents 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-3. Bulk Rename Files
+3. Bulk Rename Files (passed)
 
 # Rename using a pattern
 python3 'file organizer.py' rename ~/Pictures/'Baby Pictures' --pattern "Baby_pic_{count}.jpg"
@@ -28,7 +28,7 @@ python3 'file organizer.py' rename ~/Photos --add-date "2025-02-06"
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-4. Find Large Files
+4. Find Large Files (passed)
 
 # Find files larger than 100 MB (non-recursive)
 python3 'file organizer.py' find-large ~/Documents --min-size "100MB"
@@ -38,7 +38,7 @@ python3 'file organizer.py' find-large ~/Documents --min-size "100MB" --recursiv
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-5. Clean Up Old Files / Empty Folders
+5. Clean Up Old Files / Empty Folders (passed)
 
 # Find files older than 30 days
 python3 'file organizer.py' clean-up ~/Downloads --older-than 30
@@ -51,7 +51,7 @@ python3 'file organizer.py' clean-up ~/Downloads --empty-folder --recursive
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-6. Generate Directory Tree
+6. Generate Directory Tree (passed)
 
 # Tree with depth = 2
 python3 'file organizer.py' tree ~/Projects --depth 2
