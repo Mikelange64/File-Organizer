@@ -70,29 +70,3 @@ python organizer.py cleanup ~/Downloads --empty-folders
     • Calculate total files and size 
 Example Command:
 python organizer.py tree ~/Projects --depth 2
-
-------------------------------------------------------------------------------------------------------------------------
-
-Configuration File
-
-config.json:
-{
-  "categories": {
-    "Images": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"],
-    "Documents": [".pdf", ".docx", ".txt", ".xlsx", ".pptx", ".odt"],
-    "Audio": [".mp3", ".wav", ".flac", ".m4a", ".aac"],
-    "Videos": [".mp4", ".avi", ".mkv", ".mov", ".wmv"],
-    "Archives": [".zip", ".tar", ".gz", ".rar", ".7z"],
-    "Code": [".py", ".js", ".html", ".css", ".java", ".cpp"]
-  },
-  "ignore": [".DS_Store", "Thumbs.db", ".git", "__pycache__"]
-}
-
-Required Modules
-    • os - file system operations 
-    • shutil - moving and copying files 
-    • hashlib - file hashing for duplicate detection 
-    • json - configuration file handling 
-    • pathlib - modern path handling (optional, can use os.path) 
-    • datetime - file age checking 
-    • sys or argparse - command-line arguments 

@@ -2,14 +2,10 @@ from argparse import ArgumentParser
 from pathlib import Path
 import shutil
 import re
-import os
 import hashlib
-import json
 from datetime import datetime as dt, timedelta
 import time
-import logging
 from collections import defaultdict
-from time import sleep
 import fileExtensions
 
 
@@ -433,6 +429,45 @@ class FileOrganizer:
             FileOrganizer._delete_path(empty_folders, 'folders')
 
     @staticmethod
+    def walk_tree(args):
+        directory = Path(args.directory)
+
+        if not directory.exists():
+            print('This directory does not exist.')
+            return
+
+        if not directory.is_dir():
+            print(f'{directory} is a file not a directory')
+            return
+
+        depth = getattr(args, 'depth', None)
+
+        FileOrganizer._tree(directory, depth)
+
+    @staticmethod
+    def _get_file_hash(filepath):
+        hasher = hashlib.md5()
+
+        with open(filepath, 'rb') as f:
+            while True:
+                chunk = f.read(4096)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+
+        return hasher.hexdigest()
+
+    @staticmethod
+    def _find_unit(size:float) -> tuple[float, str]:
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024:
+                return round(size, 1), unit
+
+            size /= 1024
+
+        return round(size, 1), 'TB'
+
+    @staticmethod
     def _delete_path(paths:list, p_type:str):
 
         delete_option = input("Would you like to:\n"
@@ -500,26 +535,28 @@ class FileOrganizer:
             for p in paths:
                 print(p)
 
+    # Implemented by AI, I was not familiar with the tree display algorithm
     @staticmethod
-    def _get_file_hash(filepath):
-        hasher = hashlib.md5()
+    def _tree(path: Path, depth, prefix=""):
+        if depth is not None and depth < 0:
+            return
 
-        with open(filepath, 'rb') as f:
-            while True:
-                chunk = f.read(4096)
-                if not chunk:
-                    break
-                hasher.update(chunk)
+        try:
+            children = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name))
+        except PermissionError:
+            print(prefix + "└── [permission denied]")
+            return
 
-        return hasher.hexdigest()
+        for index, item in enumerate(children):
+            is_last = index == len(children) - 1
+            connector = "└── " if is_last else "├── "
 
-    @staticmethod
-    def _find_unit(size:float) -> tuple:
-        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if size < 1024:
-                return round(size, 1), unit
+            print(prefix + connector + item.name)
 
-            size /= 1024
+            if item.is_dir() and not item.is_symlink():
+                new_prefix = prefix + ("    " if is_last else "│   ")
+                next_depth = None if depth is None else depth - 1
+                FileOrganizer._tree(item, next_depth, new_prefix)
 
 def main():
 
@@ -530,18 +567,18 @@ def main():
 
     # ==================== ORGANIZER ====================
     organize_subparser = subparsers.add_parser('organize', help='organize directory')
-    organize_subparser.add_argument('directory', type=str, required=True, help='The directory to organize')
+    organize_subparser.add_argument('directory', type=str, required=True, help='Directory name')
     organize_subparser.set_defaults(func=organizer.organize_dir)
 
     # ==================== DUPLICATES ====================
     duplicate_subparser = subparsers.add_parser('duplicate', help='organize directory')
-    duplicate_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
+    duplicate_subparser.add_argument('directory', type=str, required=True, help='Directory name')
     duplicate_subparser.add_argument('--scan', action='store_true', help='scan directory for duplicates')
     duplicate_subparser.set_defaults(func=organizer.manage_duplicates)
 
     # ====================== RENAME ======================
     rename_subparser = subparsers.add_parser('rename', help='organize directory')
-    rename_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
+    rename_subparser.add_argument('directory', type=str, required=True, help='Directory name')
     rename_subparser.add_argument('--pattern', type=str, help='Pattern with placeholders: {name}, {count}, {doc_type}, {last_modified}')
     rename_subparser.add_argument('--add-prefix', type=str,  help='prefix to add to the file')
     rename_subparser.add_argument('--add-suffix', type=str,  help='suffix to add to the file')
@@ -549,29 +586,25 @@ def main():
     rename_subparser.set_defaults(func=organizer.bulk_rename)
 
    # ==================== FIND LARGE ====================
-    find_large_subparser = subparsers.add_parser('find-large', help='organize directory')
-    find_large_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
+    find_large_subparser = subparsers.add_parser('find-large', help='organize directory name')
+    find_large_subparser.add_argument('directory', type=str, required=True, help='Directory')
     find_large_subparser.add_argument('--min-size', type=str, required=True, help='minimum size of files to find (e.g. 100 MB)')
     find_large_subparser.add_argument('--recursive', action='store_true', help='look through the entire directory tree')
     find_large_subparser.set_defaults(func=organizer.find_large_files)
 
    # ===================== CLEANUP ======================
     cleanup_subparser = subparsers.add_parser('clean-up', help='organize directory')
-    cleanup_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
+    cleanup_subparser.add_argument('directory', type=str, required=True, help='Directory name')
     cleanup_subparser.add_argument('--older-than', type=int, help='Files older the x days')
     cleanup_subparser.add_argument('--empty-folder', action='store_true',  help='Finds all empty folders')
     cleanup_subparser.add_argument('--recursive', action='store_true',  help='Finds all empty folders')
     cleanup_subparser.set_defaults(func=organizer.clean_up)
 
-    # ===================== CLEANUP ======================
-    rename_subparser = subparsers.add_parser('clean-up', help='organize directory')
-    rename_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
-    rename_subparser.add_argument('--older-than', type=int, help='Age of files to find')
-
     # ====================== TREE =======================
     rename_subparser = subparsers.add_parser('tree', help='organize directory')
-    rename_subparser.add_argument('directory', type=str, required=True, help='Directory to inspect')
-    rename_subparser.add_argument('--depth', type=int, help='Depth of the directory tree')
+    rename_subparser.add_argument('directory', type=str, required=True, help='Directory name')
+    rename_subparser.add_argument('--depth', required=True, type=int, help='Depth of the directory tree')
+    rename_subparser.set_defaults(func=organizer.walk_tree)
 
     args = parser.parse_args()
 
