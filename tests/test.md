@@ -1,7 +1,7 @@
 1. Organize Files by Type (passed)
 
 # Organize
-python3 'File Organizer.py' organize ~/Downloads
+python3 'file organizer.py' organize ~/Downloads
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -15,7 +15,7 @@ python3 'file organizer.py' duplicate ~/Documents
 3. Bulk Rename Files (passed)
 
 # Rename using a pattern
-python3 'file organizer.py' rename ~/Pictures/'Baby Pictures' --pattern "Baby_pic_{count}.jpg"
+python3 'file organizer.py' rename ~/Pictures/'Baby Pictures' --pattern "Baby pictures_{count}.jpg"
 
 # Add a prefix
 python3 'file organizer.py' rename ~/Photos --add-prefix "2024_"

@@ -652,7 +652,7 @@ class FileOrganizer:
 
         self._tree(directory, depth)
 
-    def undo(self):
+    def undo(self, args=None):
         last_operation = self.operations["operations"][0]
         entries = last_operation["paths"]
         operation_type = last_operation["action"]
