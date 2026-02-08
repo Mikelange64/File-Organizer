@@ -8,6 +8,8 @@ import time
 from collections import defaultdict
 import logging
 import fileExtensions
+import json
+from Collections import defaultdic
 
 # Configure logging
 logging.basicConfig(
@@ -18,8 +20,22 @@ logging.basicConfig(
 
 class FileOrganizer:
 
-    @staticmethod
-    def organize_dir(args):
+    def __init__(self, base_dir=None):
+        self.BASE_DIR = Path(base_dir).expanduser().resolve() if base_dir else Path(__file__).expanduser().parent
+        self.operation_log = self.BASE_DIR/'operations.json'
+        self.deleted_file_mapping = defaultdic(list)
+
+        if self.operation_log.exists():
+            with open(self.operation_log, 'r') as f:
+                self.operations = json.load(f)
+        else:
+            self.operations = {
+                "moved files" : [],
+                "renamed files" : [],
+                "deleted files": []
+            }
+
+    def organize_dir(self, args):
         logging.info(f'Starting file organization: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
 
@@ -33,13 +49,6 @@ class FileOrganizer:
             print(f'{directory} is a file not a directory')
             return
 
-        (directory/'Documents').mkdir(exist_ok=True, parents=True)
-        (directory/'Images').mkdir(exist_ok=True, parents=True)
-        (directory/'Videos').mkdir(exist_ok=True, parents=True)
-        (directory/'Audios').mkdir(exist_ok=True, parents=True)
-        (directory/'Archives').mkdir(exist_ok=True, parents=True)
-        (directory/'Others').mkdir(exist_ok=True, parents=True)
-
         doc_count = 0
         img_count = 0
         vid_count = 0
@@ -48,6 +57,8 @@ class FileOrganizer:
         other_count = 0
 
         start_time = time.perf_counter()
+
+        moved_file_log = self.operations['moved files']
 
         for item in list(directory.iterdir()):
 
@@ -58,36 +69,44 @@ class FileOrganizer:
 
             if suffix_lower in fileExtensions.document_extensions:
                 print(f"Organizing {item.name}")
-                shutil.move(item, directory/'Documents'/item.name)
+                new_loc = self._safe_move(item, directory/'Documents')
+                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "documents", "timestamp" : dt.now().isoformat(timespec="seconds")})
                 doc_count += 1
+
 
             elif suffix_lower in fileExtensions.image_extensions:
                 print(f"Organizing {item.name}")
-                shutil.move(item, directory/'Images'/item.name)
+                new_loc = self._safe_move(item, directory/'Images')
+                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "images", "timestamp" : dt.now().isoformat(timespec="seconds")})
                 img_count += 1
 
             elif suffix_lower in fileExtensions.video_extensions:
                 print(f"Organizing {item.name}")
-                shutil.move(item, directory/'Videos'/item.name)
+                new_loc = self._safe_move(item, directory/'Videos')
+                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "videos", "timestamp" : dt.now().isoformat(timespec="seconds")})
                 vid_count += 1
 
             elif suffix_lower in fileExtensions.audio_extensions:
                 print(f"Organizing {item.name}")
-                shutil.move(item, directory/'Audios'/item.name)
+                new_loc = self._safe_move(item, directory/'Audios')
+                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "audios", "timestamp" : dt.now().isoformat(timespec="seconds")})
                 aud_count += 1
 
             elif suffix_lower in fileExtensions.archive_extensions:
                 print(f"Organizing {item.name}")
-                shutil.move(item, directory/'Archives'/item.name)
+                new_loc = self._safe_move(item, directory/'Archives')
+                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "archives", "timestamp" : dt.now().isoformat(timespec="seconds")})
                 arc_count += 1
 
             else:
                 print(f"Organizing {item.name}")
-                shutil.move(item, directory/'Others'/item.name)
+                new_loc = self._safe_move(item, directory/'Others')
+                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "others", "timestamp" :dt.now().isoformat(timespec="seconds")})
                 other_count += 1
 
-        created_folders = {'Documents', 'Images', 'Videos', 'Audios', 'Archives', 'Others'}
+        self._save()
 
+        created_folders = {'Documents', 'Images', 'Videos', 'Audios', 'Archives', 'Others'}
         for item in directory.iterdir():
             if item.is_dir() and item.name not in created_folders:
                 try:
@@ -111,8 +130,7 @@ class FileOrganizer:
         print(f"\tOthers ({other_count}) files)")
         print(f'Organized {total_files} files in {elapsed_time:.1f} seconds.')
 
-    @staticmethod
-    def manage_duplicates(args):
+    def manage_duplicates(self, args):
         logging.info(f'Starting duplicate detection: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
 
@@ -126,8 +144,11 @@ class FileOrganizer:
             print(f'{directory} is a file not a directory')
             return
 
+        deleted_file_log = self.operations['deleted files']
+        last_deleted = None
+
         min_size = args.min_size
-        result = FileOrganizer._convert_to_bytes(min_size)
+        result = self._convert_to_bytes(min_size)
 
         if result is None:
             return
@@ -135,7 +156,7 @@ class FileOrganizer:
         min_size = result[0]
         files = defaultdict(list)
 
-        EXCLUDED_DIRS = {
+        exclusive_dirs = {
             # Virtual environments
             '.venv', 'venv', 'env', 'virtualenv',
             # Package managers
@@ -161,10 +182,10 @@ class FileOrganizer:
 
             # Check if any ancestor directory is in excluded list
             if not args.all:  # If --all is NOT specified, use exclusions
-                if any(parent.name in EXCLUDED_DIRS for parent in item.parents):
+                if any(parent.name in exclusive_dirs for parent in item.parents):
                     continue
 
-            file_hash = FileOrganizer._get_file_hash(item)
+            file_hash = self._get_file_hash(item)
             files[file_hash].append(item)
 
         duplicates_found = any(len(duplicates) > 1 for duplicates in files.values())
@@ -182,7 +203,7 @@ class FileOrganizer:
                 wasted_space = sum(Path(file).stat().st_size for file in duplicates[:-1])
                 total_space_wasted += wasted_space
 
-        size, unit = FileOrganizer._find_unit(total_space_wasted)
+        size, unit = self._find_unit(total_space_wasted)
         duplicate_count = sum(len(duplicates[:-1]) for duplicates in files.values() if len(duplicates) > 1)
         print(f'Found {duplicate_count} duplicate files, wasting {size} {unit}')
 
@@ -227,6 +248,8 @@ class FileOrganizer:
                 for f in sorted_duplicated[1:]:
                     try:
                         f.unlink()
+                        deleted_file_log.insert(0, {"path": f, "timestamp": dt.now().isoformat(timespec="seconds")
+})
                     except OSError as e:
                             logging.error(f'Failed to delete {f}: {e}')
                             print(f'{f} could not be deleted.')
@@ -247,7 +270,7 @@ class FileOrganizer:
                     print(f'\t{i}. {relative}')
 
                 extra_size = sum(Path(file).stat().st_size for file in duplicates[:-1])
-                size, unit = FileOrganizer._find_unit(extra_size)
+                size, unit = self._find_unit(extra_size)
                 print(f'There are {size} {unit} of wasted space.')
 
                 decision = input('Would you like to delete the duplicate files? [y/N]: ')
@@ -282,7 +305,7 @@ class FileOrganizer:
                     print()
                     continue
 
-            size, unit = FileOrganizer._find_unit(freed_space)
+            size, unit = self._find_unit(freed_space)
             logging.info(f'Deleted {total_deleted} duplicate files, freed {size} {unit}')
             print(f" You've deleted {total_deleted} files, and saved {size} {unit}")
 
@@ -290,8 +313,7 @@ class FileOrganizer:
             logging.info(f'User chose not to delete duplicates')
             print('Duplicates found but not deleted')
 
-    @staticmethod
-    def bulk_rename(args):
+    def bulk_rename(self, args):
         logging.info(f'Starting bulk rename: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
 
@@ -427,8 +449,7 @@ class FileOrganizer:
 
             logging.info(f'Completed prefix/suffix/date rename: {renamed_count} files')
 
-    @staticmethod
-    def find_large_files(args):
+    def find_large_files(self, args):
         logging.info(f'Searching for large files: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
 
@@ -445,7 +466,7 @@ class FileOrganizer:
         # min_size comes as a string of size + unit (e.g. 100 MB), we have to convert it to bytes directly
         user_size = args.min_size.strip()
 
-        result = FileOrganizer._convert_to_bytes(user_size)
+        result = self._convert_to_bytes(user_size)
 
         if result is None:
             return
@@ -464,15 +485,14 @@ class FileOrganizer:
         print(f'{len(sorted_files)} files larger than {num_part} {unit}')
 
         for file in sorted_files:
-            f_size, f_unit = FileOrganizer._find_unit(file[1])
+            f_size, f_unit = self._find_unit(file[1])
             print(f'\t{file[0]}: {f_size} {f_unit}')
 
-        t_size, t_unit = FileOrganizer._find_unit(total_size)
+        t_size, t_unit = self._find_unit(total_size)
         logging.info(f'Total size of large files: {t_size} {t_unit}')
         print(f'Total size: {t_size} {t_unit}.')
 
-    @staticmethod
-    def clean_up(args):
+    def clean_up(self, args):
         logging.info(f'Starting cleanup: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
 
@@ -522,13 +542,13 @@ class FileOrganizer:
                 return
 
             total_size = sum(file[1] for file in old_files)
-            size, unit = FileOrganizer._find_unit(total_size)
+            size, unit = self._find_unit(total_size)
             logging.warning(f'Found {len(old_files)} old files totaling {size} {unit}')
 
             print(f'You have {size} {unit} of old files.')
             old_paths = [p[0] for p in old_files]
 
-            FileOrganizer._delete_path(old_paths, 'files')
+            self._delete_path(old_paths, 'files')
 
         if empty:
             logging.info('Searching for empty folders')
@@ -550,10 +570,9 @@ class FileOrganizer:
             logging.warning(f'Found {len(empty_folders)} empty folders')
             print(f'{len(empty_folders)} empty folders found')
 
-            FileOrganizer._delete_path(empty_folders, 'folders')
+            self._delete_path(empty_folders, 'folders')
 
-    @staticmethod
-    def walk_tree(args):
+    def walk_tree(self, args):
         logging.info(f'Displaying directory tree: {args.directory}')
         directory = Path(args.directory).expanduser().resolve()
 
@@ -569,10 +588,72 @@ class FileOrganizer:
 
         depth = getattr(args, 'depth', None)
 
-        FileOrganizer._tree(directory, depth)
+        self._tree(directory, depth)
 
-    @staticmethod
-    def _get_file_hash(filepath):
+    def undo(self):
+        pass
+
+    def _save(self):
+        with open(self.operation_log, 'w') as f:
+            json.dumps(self.operations, f, inden=2)
+
+    def _safe_move(self, src: Path, dest_dir: Path):
+        dest_dir.mkdir(exist_ok=True, parents=True)
+        dest = dest_dir / src.name
+        counter = 2
+
+        while dest.exists():
+            dest = dest_dir / f"{src.stem}_{counter}{src.suffix}"
+            counter += 1
+
+        shutil.move(src, dest)
+        return dest
+
+    def _backup_deleted_files(self, file_list: list):
+        dest_dir = self.BASE_DIR / '.last_deleted'
+        dest_dir.mkdir(exist_ok=True, parents=True)
+        deleted_file_names = dest_dir/'deleted files mapping.json'
+
+        old_backups = list(dest_dir.iterdir())
+        backed_up_files = []
+
+        for file in file_list:
+            hash_file = self._get_file_hash(file)
+            self.deleted_file_mapping[hash_file].append(file)
+
+            dest = dest_dir / file.name
+            counter = 2
+
+            try:
+                while dest.exists():
+                    dest = dest_dir / f'{file.stem}_{counter}{file.suffix}'
+                    counter += 1
+
+                shutil.copy2(file, dest)
+                backed_up_files.append(dest)
+
+            except OSError as e:
+                print(f'Error copying file: {e}. Backup cancelled.')
+                for f in backed_up_files:
+                    try:
+                        f.unlink()
+                    except OSError:
+                        pass
+                return None
+
+        with open(deleted_file_names, 'w') as jf:
+            json.dump(self.deleted_file_mapping, jf, indent=2)
+
+        for file in old_backups:
+            if file.name != 'deleted files mapping.json':
+                try :
+                    file.unlink()
+                except OSError as e:
+                    print(e)
+
+        return True
+
+    def _get_file_hash(self, filepath: Path):
         try:
             hasher = hashlib.md5()
 
@@ -589,8 +670,7 @@ class FileOrganizer:
             logging.error(f'Error computing hash for {filepath}: {e}')
             raise
 
-    @staticmethod
-    def _find_unit(size:float) -> tuple[float, str]:
+    def _find_unit(self, size:float) -> tuple[float, str]:
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if size < 1024:
                 return round(size, 1), unit
@@ -599,8 +679,7 @@ class FileOrganizer:
 
         return round(size, 1), 'TB'
 
-    @staticmethod
-    def _convert_to_bytes(user_size):
+    def _convert_to_bytes(self, user_size:str):
         num_part = ''
         unit_part = ''
 
@@ -642,8 +721,7 @@ class FileOrganizer:
 
         return min_size, num_part, unit_part
 
-    @staticmethod
-    def _delete_path(paths:list, p_type:str):
+    def _delete_path(self, paths:list, p_type:str):
         delete_option = input("Would you like to:\n"
                            f"A. Delete all old {p_type}\n"
                            f"B. Delete selected {p_type} only\n"
@@ -703,7 +781,7 @@ class FileOrganizer:
                             print(f'{p} could not be deleted.')
 
             if p_type == 'files':
-                size, unit = FileOrganizer._find_unit(freed_space)
+                size, unit = self._find_unit(freed_space)
                 logging.info(f'Deleted {paths_deleted} files, freed {size} {unit}')
                 print(f'{paths_deleted} files deleted ({size} {unit})')
 
@@ -717,8 +795,7 @@ class FileOrganizer:
                 print(p)
 
     # Implemented by AI, I was not familiar with the tree display algorithm
-    @staticmethod
-    def _tree(path: Path, depth, prefix=""):
+    def _tree(self, path: Path, depth, prefix=""):
         if depth is not None and depth < 0:
             return
 
@@ -737,7 +814,7 @@ class FileOrganizer:
             if item.is_dir() and not item.is_symlink():
                 new_prefix = prefix + ("    " if is_last else "│   ")
                 next_depth = None if depth is None else depth - 1
-                FileOrganizer._tree(item, next_depth, new_prefix)
+                self._tree(item, next_depth, new_prefix)
 
 def main():
     logging.info('File Organizer started')
