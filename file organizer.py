@@ -9,7 +9,6 @@ from collections import defaultdict
 import logging
 import fileExtensions
 import json
-from Collections import defaultdic
 
 # Configure logging
 logging.basicConfig(
@@ -17,23 +16,18 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(funcName)s - %(message)s'
 )
 
-
 class FileOrganizer:
 
     def __init__(self, base_dir=None):
         self.BASE_DIR = Path(base_dir).expanduser().resolve() if base_dir else Path(__file__).expanduser().parent
         self.operation_log = self.BASE_DIR/'operations.json'
-        self.deleted_file_mapping = defaultdic(list)
+        self.deleted_file_mapping = defaultdict(list)
 
         if self.operation_log.exists():
             with open(self.operation_log, 'r') as f:
                 self.operations = json.load(f)
         else:
-            self.operations = {
-                "moved files" : [],
-                "renamed files" : [],
-                "deleted files": []
-            }
+            self.operations = {"operations" : []}
 
     def organize_dir(self, args):
         logging.info(f'Starting file organization: {args.directory}')
@@ -58,8 +52,13 @@ class FileOrganizer:
 
         start_time = time.perf_counter()
 
-        moved_file_log = self.operations['moved files']
+        moved_file_log = {
+            "action": "organize directory",
+            "timestamp" : dt.now().isoformat(timespec="seconds"),
+            "paths" : [
 
+            ]
+        }
         for item in list(directory.iterdir()):
 
             if not item.is_file():
@@ -70,40 +69,41 @@ class FileOrganizer:
             if suffix_lower in fileExtensions.document_extensions:
                 print(f"Organizing {item.name}")
                 new_loc = self._safe_move(item, directory/'Documents')
-                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "documents", "timestamp" : dt.now().isoformat(timespec="seconds")})
+                moved_file_log["paths"].insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "documents"})
                 doc_count += 1
 
 
             elif suffix_lower in fileExtensions.image_extensions:
                 print(f"Organizing {item.name}")
                 new_loc = self._safe_move(item, directory/'Images')
-                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "images", "timestamp" : dt.now().isoformat(timespec="seconds")})
+                moved_file_log["paths"].insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "images"})
                 img_count += 1
 
             elif suffix_lower in fileExtensions.video_extensions:
                 print(f"Organizing {item.name}")
                 new_loc = self._safe_move(item, directory/'Videos')
-                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "videos", "timestamp" : dt.now().isoformat(timespec="seconds")})
+                moved_file_log["paths"].insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "videos"})
                 vid_count += 1
 
             elif suffix_lower in fileExtensions.audio_extensions:
                 print(f"Organizing {item.name}")
                 new_loc = self._safe_move(item, directory/'Audios')
-                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "audios", "timestamp" : dt.now().isoformat(timespec="seconds")})
+                moved_file_log["paths"].insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "audios"})
                 aud_count += 1
 
             elif suffix_lower in fileExtensions.archive_extensions:
                 print(f"Organizing {item.name}")
                 new_loc = self._safe_move(item, directory/'Archives')
-                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "archives", "timestamp" : dt.now().isoformat(timespec="seconds")})
+                moved_file_log["paths"].insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "archives"})
                 arc_count += 1
 
             else:
                 print(f"Organizing {item.name}")
                 new_loc = self._safe_move(item, directory/'Others')
-                moved_file_log.insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "others", "timestamp" :dt.now().isoformat(timespec="seconds")})
+                moved_file_log["paths"].insert(0,{"from" : str(item), "to" : str(new_loc), "type" : "others"})
                 other_count += 1
 
+        self.operations["operations"].insert(0, moved_file_log)
         self._save()
 
         created_folders = {'Documents', 'Images', 'Videos', 'Audios', 'Archives', 'Others'}
@@ -144,8 +144,13 @@ class FileOrganizer:
             print(f'{directory} is a file not a directory')
             return
 
-        deleted_file_log = self.operations['deleted files']
-        last_deleted = None
+        deleted_file_log = {
+            "action" : "delete paths",
+            "timestamp" : dt.now().isoformat(timespec="seconds"),
+            "paths" : [
+
+            ]
+        }
 
         min_size = args.min_size
         result = self._convert_to_bytes(min_size)
@@ -218,7 +223,7 @@ class FileOrganizer:
                 print(f"  {i}. {relative}")
 
         print("\n⚠️  WARNING")
-        print("Deleted files will be permanently removed and cannot be recovered.\n")
+        print("Deleted files will be permanently removed and cannot only be recovered by using the undo option immediately after.\n")
 
         delete_options = input('Do you want to:\n'
                                '1. Delete all duplicates (keep newest)\n'
@@ -237,29 +242,31 @@ class FileOrganizer:
 
         if delete_options == '1':
 
-            confirm = input("All duplicates will be permanently deleted. Type DELETE to confirm, or anything else to cancel: ")
-            if confirm != "DELETE":
-                print("Operation cancelled. No files were deleted.")
-                return
-
             for duplicates in duplicates_list:
                 sorted_duplicated = sorted(duplicates, key=lambda f: f.stat().st_mtime, reverse=True)
+
+                if not self._backup_deleted_files(sorted_duplicated[1:]):
+                    confirm = input("Backup failed. All duplicates will be permanently deleted. Type DELETE to confirm, or anything else to cancel: ")
+                    if confirm != "DELETE":
+                        print("Operation cancelled. No files were deleted.")
+                        return
 
                 for f in sorted_duplicated[1:]:
                     try:
                         f.unlink()
-                        deleted_file_log.insert(0, {"path": f, "timestamp": dt.now().isoformat(timespec="seconds")
-})
+                        deleted_file_log['paths'].insert(0, {"path": str(f)})
                     except OSError as e:
                             logging.error(f'Failed to delete {f}: {e}')
                             print(f'{f} could not be deleted.')
 
             print(f'All duplicates deleted. Saved {size} {unit} of space.')
+            self.operations['operations'].insert(0, deleted_file_log)
+            self._save()
 
         elif delete_options == '2':
-
             freed_space = 0
             total_deleted = 0
+            files_to_delete = []
 
             for duplicates in duplicates_list:
                 print(f'{len(duplicates)} identical files in:')
@@ -283,6 +290,7 @@ class FileOrganizer:
                                 break
                             else:
                                 print(f"Please enter a number between 1 and {len(duplicates)}")
+
                         except ValueError:
                             print("Please enter a valid number.")
 
@@ -290,20 +298,32 @@ class FileOrganizer:
                     for f in duplicates:
                         if f == file_to_keep:
                             continue
-
-                        try:
-                            freed_space += f.stat().st_size
-                            f.unlink()
-                            total_deleted += 1
-                            print()
-
-                        except OSError as e:
-                            logging.error(f'Failed to delete {f}: {e}')
-                            print(f'{f} could not be deleted.')
-                            print()
+                        files_to_delete.append(f)
                 else:
                     print()
                     continue
+
+            if not self._backup_deleted_files(files_to_delete):
+                confirm = input(
+                    "Backup failed. All duplicates will be permanently deleted. Type DELETE to confirm, or anything else to cancel: ")
+                if confirm != "DELETE":
+                    print("Operation cancelled. No files were deleted.")
+                    return
+
+            for f in files_to_delete:
+                try:
+                    freed_space += f.stat().st_size
+                    f.unlink()
+                    deleted_file_log["paths"].insert(0, {"path": str(f)})
+                    total_deleted += 1
+                    print()
+
+                except OSError as e:
+                    print(f'Error deleting {f}: {e}')
+                    pass
+
+            self.operations["operations"].insert(0, deleted_file_log)
+            self._save()
 
             size, unit = self._find_unit(freed_space)
             logging.info(f'Deleted {total_deleted} duplicate files, freed {size} {unit}')
@@ -351,6 +371,14 @@ class FileOrganizer:
         valid_placeholders = {'{count}', '{name}', '{last_modified}', '{doc_type}'}
 
         all_files = [item for item in directory.iterdir() if item.is_file()]
+
+        renamed_files_log = {
+            "action" : "rename paths",
+            "timestamp" : dt.now().isoformat(timespec="seconds"),
+            "paths" : [
+
+            ]
+        }
 
         if pattern:
             logging.info(f'Applying pattern: {pattern}')
@@ -416,9 +444,12 @@ class FileOrganizer:
                     continue
 
                 file.rename(new_path)
+                renamed_files_log["paths"].insert(0, {"from" : str(file), "to" : str(new_path)})
                 count += 1
 
             logging.info(f'Completed pattern rename: {count} files')
+            self.operations["operations"].insert(0, renamed_files_log)
+            self._save()
 
         if any((suffix, prefix, date)):
             renamed_count = 0
@@ -445,9 +476,12 @@ class FileOrganizer:
                     continue
 
                 file.rename(new_path)
+                renamed_files_log["paths"].insert(0, {"from" : str(file), "to" : str(new_path)})
                 renamed_count += 1
 
             logging.info(f'Completed prefix/suffix/date rename: {renamed_count} files')
+            self.operations["operations"].insert(0, renamed_files_log)
+            self._save()
 
     def find_large_files(self, args):
         logging.info(f'Searching for large files: {args.directory}')
@@ -521,6 +555,14 @@ class FileOrganizer:
 
         files_to_check = directory.rglob('*') if args.recursive else directory.iterdir()
 
+        deleted_files_log = {
+            "action" : "delete paths",
+            "timestamp" : dt.now().isoformat(timespec="seconds"),
+            "paths" : [
+
+            ]
+        }
+
         if older_than:
             logging.info(f'Searching for files older than {older_than} days')
             today = dt.today()
@@ -534,6 +576,7 @@ class FileOrganizer:
                 last_modified = dt.fromtimestamp(item.stat().st_mtime)
 
                 if last_modified < cutoff:
+                    deleted_files_log["paths"].insert(0, {"path" : str(item)})
                     old_files.append((item, item.stat().st_size))
 
             if not old_files:
@@ -548,7 +591,16 @@ class FileOrganizer:
             print(f'You have {size} {unit} of old files.')
             old_paths = [p[0] for p in old_files]
 
+            if not self._backup_deleted_files(old_paths):
+                confirm = input(
+                    "Backup failed. All duplicates will be permanently deleted. Type DELETE to confirm, or anything else to cancel: ")
+                if confirm != "DELETE":
+                    print("Operation cancelled. No files were deleted.")
+                    return
+
             self._delete_path(old_paths, 'files')
+            self.operations["operations"].insert(0, deleted_files_log)
+            self._save()
 
         if empty:
             logging.info('Searching for empty folders')
@@ -561,16 +613,26 @@ class FileOrganizer:
 
                 if not any(item.iterdir()):
                     empty_folders.append(item)
+                    deleted_files_log["paths"].insert(0, {"path" : str(item)})
 
             if not empty_folders:
                 logging.info('No empty folders found')
                 print('No folders are empty in this directory')
                 return
 
+            if not self._backup_deleted_files(empty_folders):
+                confirm = input(
+                    "Backup failed. All duplicates will be permanently deleted. Type DELETE to confirm, or anything else to cancel: ")
+                if confirm != "DELETE":
+                    print("Operation cancelled. No files were deleted.")
+                    return
+
             logging.warning(f'Found {len(empty_folders)} empty folders')
             print(f'{len(empty_folders)} empty folders found')
 
             self._delete_path(empty_folders, 'folders')
+            self.operations["operations"].insert(0, deleted_files_log)
+            self._save()
 
     def walk_tree(self, args):
         logging.info(f'Displaying directory tree: {args.directory}')
@@ -591,11 +653,89 @@ class FileOrganizer:
         self._tree(directory, depth)
 
     def undo(self):
-        pass
+        last_operation = self.operations["operations"][0]
+        entries = last_operation["paths"]
+        operation_type = last_operation["action"]
+        f_total = len(entries)
+
+        if operation_type == "organize directory":
+            for entry in entries:
+                src = Path(entry["to"])
+                dest = Path(entry["from"])
+
+                if not src.exists():
+                    print(f'Undo skipped: source no longer exists: {src}')
+                    continue
+
+                if dest.exists():
+                    print(f'Undo skipped: file could not be moved — destination already exists: {dest}')
+                    continue
+
+                shutil.move(src, dest)
+
+            print(f'Undo successful, {f_total} files moved back to their previous location.')
+            self.operations["operations"].pop(0)
+            self._save()
+            return True
+
+        elif operation_type == "rename paths":
+            f_total = len(entries)
+            for entry in entries:
+                old_name = Path(entry["from"])
+                curr_name = Path(entry["to"])
+
+                if not curr_name.exists():
+                    print(f'Undo skipped: source no longer exists: {curr_name}')
+                    continue
+
+                if old_name.exists():
+                    print(f'Undo skipped: file could not be renamed — A file with that name already exists: {old_name}')
+                    continue
+
+                curr_name.rename(old_name)
+
+            print(f'Undo successful, {f_total} files renamed.')
+            self.operations["operations"].pop(0)
+            self._save()
+            return True
+
+        elif operation_type == "delete paths":
+            deleted_file_folder = self.BASE_DIR / '.last_deleted'
+            deleted_file_names = deleted_file_folder / 'deleted files mapping.json'
+            f_total = 0
+
+            if not deleted_file_names.exists() or not deleted_file_folder.exists():
+                print('Undo cancelled, deleted files cannot be recovered')
+                return False
+
+            with open(deleted_file_names, 'r') as f:
+                self.deleted_file_mapping = json.load(f)
+
+            for file in deleted_file_folder.iterdir():
+                if file.name != 'deleted files mapping.json':
+                    file_hash = self._get_file_hash(file)
+
+                    file_match = self.deleted_file_mapping.get(file_hash, [])
+
+                    if not file_match:
+                        continue
+
+                    for f in file_match:
+                        try:
+                            shutil.copy2(file, f)
+                            f_total += 1
+
+                        except OSError as e:
+                            print(f'{f} could not be recovered: {e}')
+
+            print(f'Undo successful, {f_total} files recovered.')
+            self.operations["operations"].pop(0)
+            self._save()
+            return True
 
     def _save(self):
         with open(self.operation_log, 'w') as f:
-            json.dumps(self.operations, f, inden=2)
+            json.dump(self.operations, f, indent=2)
 
     def _safe_move(self, src: Path, dest_dir: Path):
         dest_dir.mkdir(exist_ok=True, parents=True)
@@ -609,6 +749,23 @@ class FileOrganizer:
         shutil.move(src, dest)
         return dest
 
+    def _get_file_hash(self, filepath: Path):
+        try:
+            hasher = hashlib.md5()
+
+            with open(filepath, 'rb') as f:
+                while True:
+                    chunk = f.read(4096)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+
+            file_hash = hasher.hexdigest()
+            return file_hash
+        except OSError as e:
+            logging.error(f'Error computing hash for {filepath}: {e}')
+            raise
+
     def _backup_deleted_files(self, file_list: list):
         dest_dir = self.BASE_DIR / '.last_deleted'
         dest_dir.mkdir(exist_ok=True, parents=True)
@@ -619,7 +776,7 @@ class FileOrganizer:
 
         for file in file_list:
             hash_file = self._get_file_hash(file)
-            self.deleted_file_mapping[hash_file].append(file)
+            self.deleted_file_mapping[hash_file].append(str(file))
 
             dest = dest_dir / file.name
             counter = 2
@@ -652,23 +809,6 @@ class FileOrganizer:
                     print(e)
 
         return True
-
-    def _get_file_hash(self, filepath: Path):
-        try:
-            hasher = hashlib.md5()
-
-            with open(filepath, 'rb') as f:
-                while True:
-                    chunk = f.read(4096)
-                    if not chunk:
-                        break
-                    hasher.update(chunk)
-
-            file_hash = hasher.hexdigest()
-            return file_hash
-        except OSError as e:
-            logging.error(f'Error computing hash for {filepath}: {e}')
-            raise
 
     def _find_unit(self, size:float) -> tuple[float, str]:
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
@@ -830,14 +970,14 @@ def main():
     organize_subparser.set_defaults(func=organizer.organize_dir)
 
     # ==================== DUPLICATES ====================
-    duplicate_subparser = subparsers.add_parser('duplicate', help='organize directory')
+    duplicate_subparser = subparsers.add_parser('duplicate', help='manage duplicate files')
     duplicate_subparser.add_argument('directory', type=str, help='Directory name')
     duplicate_subparser.add_argument('--min-size', default='1KB', help='Minimum file size to check (default: 1KB)')
     duplicate_subparser.add_argument('--all', action='store_true', help='Include system directories and virtual environments (not recommended)')
     duplicate_subparser.set_defaults(func=organizer.manage_duplicates)
 
     # ====================== RENAME ======================
-    rename_subparser = subparsers.add_parser('rename', help='organize directory')
+    rename_subparser = subparsers.add_parser('rename', help='rename files inside of directory')
     rename_subparser.add_argument('directory', type=str, help='Directory name')
     rename_subparser.add_argument('--pattern', type=str, help='Pattern with placeholders: {name}, {count}, {doc_type}, {last_modified}')
     rename_subparser.add_argument('--add-prefix', type=str,  help='prefix to add to the file')
@@ -846,14 +986,14 @@ def main():
     rename_subparser.set_defaults(func=organizer.bulk_rename)
 
    # ==================== FIND LARGE ====================
-    find_large_subparser = subparsers.add_parser('find-large', help='organize directory name')
+    find_large_subparser = subparsers.add_parser('find-large', help='find files over specified size')
     find_large_subparser.add_argument('directory', type=str, help='Directory')
     find_large_subparser.add_argument('--min-size', type=str, required=True, help='minimum size of files to find (e.g. 100 MB)')
     find_large_subparser.add_argument('--recursive', action='store_true', help='look through the entire directory tree')
     find_large_subparser.set_defaults(func=organizer.find_large_files)
 
    # ===================== CLEANUP ======================
-    cleanup_subparser = subparsers.add_parser('clean-up', help='organize directory')
+    cleanup_subparser = subparsers.add_parser('clean-up', help='delete old files or empty folders')
     cleanup_subparser.add_argument('directory', type=str, help='Directory name')
     cleanup_subparser.add_argument('--older-than', type=int, help='Files older the x days')
     cleanup_subparser.add_argument('--empty-folder', action='store_true',  help='Finds all empty folders')
@@ -861,10 +1001,14 @@ def main():
     cleanup_subparser.set_defaults(func=organizer.clean_up)
 
     # ====================== TREE =======================
-    rename_subparser = subparsers.add_parser('tree', help='organize directory')
+    rename_subparser = subparsers.add_parser('tree', help='show directory in tree structure')
     rename_subparser.add_argument('directory', type=str, help='Directory name')
     rename_subparser.add_argument('--depth', type=int, help='Depth of the directory tree')
     rename_subparser.set_defaults(func=organizer.walk_tree)
+
+    # ====================== UNDO =======================
+    undo_subparser = subparsers.add_parser('undo', help='undo previous operation')
+    undo_subparser.set_defaults(func=organizer.undo)
 
     args = parser.parse_args()
 
