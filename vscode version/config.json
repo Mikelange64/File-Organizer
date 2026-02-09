@@ -1,0 +1,11 @@
+{
+  "categories": {
+    "Images": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"],
+    "Documents": [".pdf", ".docx", ".txt", ".xlsx", ".pptx", ".odt"],
+    "Audio": [".mp3", ".wav", ".flac", ".m4a", ".aac"],
+    "Videos": [".mp4", ".avi", ".mkv", ".mov", ".wmv"],
+    "Archives": [".zip", ".tar", ".gz", ".rar", ".7z"],
+    "Code": [".py", ".js", ".html", ".css", ".java", ".cpp"]
+  },
+  "ignore": [".DS_Store", "Thumbs.db", ".git", "__pycache__"]
+}
